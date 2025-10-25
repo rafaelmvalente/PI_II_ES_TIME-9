@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Disciplinas - NotaDez</title>
+    <link href="styless/base.css" rel="stylesheet" type="text/css"/>
+    <style>
+        .disciplinas-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .disciplina-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #007bff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .acoes-disciplina {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-small {
+            width: auto;
+            padding: 8px 15px;
+            font-size: 14px;
+            margin: 0;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin: 0;
+        }
+        .user-info {
+            font-size: 0.9em;
+        }
+        .user-info a {
+            color: white;
+            text-decoration: none;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 7px;
+            border: 1px solid #b0c4de;
+            border-radius: 6px;
+            font-size: 1em;
+            background: #f7fafd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>NotaDez</h1>
+            <div class="user-info">
+                <a href="instituicao.html">← Voltar</a> | 
+                <span id="userInfo"></span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Gerenciar Disciplinas</h2>
+            
+            <form id="disciplinaForm">
+                <div class="form-group">
+                    <label for="instituicaoSelect">Instituição:</label>
+                    <select id="instituicaoSelect" required>
+                        <option value="">Selecione uma instituição</option>
+                    </select>
+                </div>
+                
+                <label for="nomeDisciplina">Nome da disciplina:</label>
+                <input type="text" id="nomeDisciplina" required placeholder="Ex: Cálculo I">
+                
+                <label for="siglaDisciplina">Sigla:</label>
+                <input type="text" id="siglaDisciplina" required placeholder="Ex: CALC1">
+                
+                <label for="codigoDisciplina">Código:</label>
+                <input type="text" id="codigoDisciplina" required placeholder="Ex: MAT001">
+                
+                <label for="periodoDisciplina">Período/Semestre:</label>
+                <input type="text" id="periodoDisciplina" required placeholder="Ex: 2025.1, 1º Semestre">
+                
+                <button type="submit">Cadastrar Disciplina</button>
+            </form>
+
+            <div class="disciplinas-grid" id="listaDisciplinas"></div>
+        </div>
+    </div>
+
+    <script>
+
+        const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        if (!usuarioLogado) {
+            window.location.href = 'notadez.html';
+        }
+
+        document.getElementById('userInfo').innerHTML = 
+            `${usuarioLogado.nome} | <a href="notadez.html" onclick="logout()">Sair</a>`;
+
+        carregarInstituicoes();
+        carregarDisciplinas();
+
+        document.getElementById('disciplinaForm').onsubmit = function(e) {
+            e.preventDefault();
+            
+            const instituicaoId = parseInt(document.getElementById('instituicaoSelect').value);
+            if (!instituicaoId) {
+                alert('Selecione uma instituição!');
+                return;
+            }
+            
+            const disciplina = {
+                id: Date.now(),
+                instituicaoId: instituicaoId,
+                nome: document.getElementById('nomeDisciplina').value,
+                sigla: document.getElementById('siglaDisciplina').value,
+                codigo: document.getElementById('codigoDisciplina').value,
+                periodo: document.getElementById('periodoDisciplina').value,
+                usuarioEmail: usuarioLogado.email
+            };
+
+            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
+            disciplinas.push(disciplina);
+            localStorage.setItem('disciplinas', JSON.stringify(disciplina));
+
+            localStorage.setItem('disciplinaAtual', JSON.stringify(disciplina));
+
+            alert('Disciplina cadastrada com sucesso!');
+            document.getElementById('disciplinaForm').reset();
+            carregarDisciplinas();
+        };
+
+        function carregarInstituicoes() {
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            const instituicoesUsuario = instituicoes.filter(inst => inst.usuarioEmail === usuarioLogado.email);
+            
+            const select = document.getElementById('instituicaoSelect');
+            select.innerHTML = '<option value="">Selecione uma instituição</option>' +
+                instituicoesUsuario.map(inst => 
+                    `<option value="${inst.id}">${inst.nome} - ${inst.curso}</option>`
+                ).join('');
+        }
+
+        function carregarDisciplinas() {
+            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            const disciplinasUsuario = disciplinas.filter(disc => disc.usuarioEmail === usuarioLogado.email);
+            
+            const lista = document.getElementById('listaDisciplinas');
+            
+            if (disciplinasUsuario.length === 0) {
+                lista.innerHTML = '<p style="text-align: center; color: #666;">Nenhuma disciplina cadastrada ainda.</p>';
+                return;
+            }
+
+            lista.innerHTML = disciplinasUsuario.map(disc => {
+                const instituicao = instituicoes.find(inst => inst.id === disc.instituicaoId);
+                return `
+                    <div class="disciplina-card">
+                        <h3>${disc.nome} (${disc.sigla})</h3>
+                        <p><strong>Instituição:</strong> ${instituicao?.nome || 'N/A'}</p>
+                        <p><strong>Código:</strong> ${disc.codigo}</p>
+                        <p><strong>Período:</strong> ${disc.periodo}</p>
+                        <div class="acoes-disciplina">
+                            <button class="btn-small" onclick="gerenciarTurmas(${disc.id})">
+                                Gerenciar Turmas
+                            </button>
+                            <button class="btn-small btn-secondary" onclick="editarDisciplina(${disc.id})">
+                                Editar
+                            </button>
+                            <button class="btn-small btn-excluir" onclick="excluirDisciplina(${disc.id})">
+                                Excluir
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function gerenciarTurmas(disciplinaId) {
+            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
+            const disciplina = disciplinas.find(disc => disc.id === disciplinaId);
+            
+            if (disciplina) {
+                localStorage.setItem('disciplinaAtual', JSON.stringify(disciplina));
+                window.location.href = 'turmas.html';
+            }
+        }
+
+        function excluirDisciplina(id) {
+            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
+            const disciplina = disciplinas.find(disc => disc.id === id);
+            
+            // Verificar se há turmas vinculadas
+            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
+            const temTurmas = turmas.some(turma => turma.disciplinaId === id);
+            
+            if (temTurmas) {
+                alert('Não é possível excluir esta disciplina pois existem turmas vinculadas a ela.');
+                return;
+            }
+            
+            if (confirm('Tem certeza que deseja excluir esta disciplina?')) {
+                const novasDisciplinas = disciplinas.filter(disc => disc.id !== id);
+                localStorage.setItem('disciplinas', JSON.stringify(novasDisciplinas));
+                carregarDisciplinas();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('usuarioLogado');
+        }
+    </script>
+</body>
+</html>
