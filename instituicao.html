@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <title>Instituição - NotaDez</title>
+    <link href="styless/base.css" rel="stylesheet" type="text/css"/>
+</head>
+<body>
+    <div class="container">
+        <div class="bemvindo" id="bemvindo"></div>
+        <div class="info">
+            Informe pelo menos uma instituição onde trabalha e um curso que leciona.<br>
+            Exemplo: <b>PUC-Campinas</b> e <b>Engenharia de Software</b>
+        </div>
+        <h2>Cadastro de Instituição e Curso</h2>
+        <form id="instituicaoForm">
+            <label for="instituicao">Instituição:</label>
+            <input type="text" id="instituicao" name="instituicao" required placeholder="Ex: PUC-Campinas">
+            
+            <label for="curso">Curso:</label>
+            <input type="text" id="curso" name="curso" required placeholder="Ex: Engenharia de Software">
+            
+            <button type="submit">Continuar para Disciplinas</button>
+        </form>
+
+        <div id="instituicoesCadastradas" style="display: none; margin-top: 20px;">
+            <h3>Suas Instituições Cadastradas</h3>
+            <div id="listaInstituicoes"></div>
+            <button type="button" onclick="novaInstituicao()" style="background: #6c757d; margin-top: 10px;">
+                + Adicionar outra instituição
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        if (!usuarioLogado) {
+            window.location.href = 'notadez.html';
+        }
+
+        document.getElementById('bemvindo').textContent = `Bem-vindo, ${usuarioLogado.nome}!`;
+
+        carregarInstituicoes();
+
+        document.getElementById('instituicaoForm').onsubmit = function(e) {
+            e.preventDefault();
+            
+            const instituicao = {
+                id: Date.now(), 
+                nome: document.getElementById('instituicao').value,
+                curso: document.getElementById('curso').value,
+                usuarioEmail: usuarioLogado.email 
+            };
+
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            instituicoes.push(instituicao);
+            localStorage.setItem('instituicoes', JSON.stringify(instituicoes));
+
+            localStorage.setItem('instituicaoAtual', JSON.stringify(instituicao));
+
+            window.location.href = 'disciplinas.html';
+        };
+
+        function carregarInstituicoes() {
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            const instituicoesUsuario = instituicoes.filter(inst => inst.usuarioEmail === usuarioLogado.email);
+            
+            if (instituicoesUsuario.length > 0) {
+                document.getElementById('instituicoesCadastradas').style.display = 'block';
+                const lista = document.getElementById('listaInstituicoes');
+                
+                lista.innerHTML = instituicoesUsuario.map(inst => `
+                    <div style="background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px;">
+                        <strong>${inst.nome}</strong> - ${inst.curso}
+                        <button onclick="selecionarInstituicao(${inst.id})" style="background: #28a745; margin-left: 10px; padding: 5px 10px;">
+                            Selecionar
+                        </button>
+                        <button onclick="excluirInstituicao(${inst.id})" style="background: #dc3545; margin-left: 5px; padding: 5px 10px;">
+                            Excluir
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function selecionarInstituicao(id) {
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            const instituicao = instituicoes.find(inst => inst.id === id);
+            
+            if (instituicao) {
+                localStorage.setItem('instituicaoAtual', JSON.stringify(instituicao));
+                window.location.href = 'disciplinas.html';
+            }
+        }
+
+        function excluirInstituicao(id) {
+            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
+            const instituicoesFiltradas = instituicoes.filter(inst => inst.id !== id);
+            
+            localStorage.setItem('instituicoes', JSON.stringify(instituicoesFiltradas));
+            carregarInstituicoes();
+        }
+
+        function novaInstituicao() {
+            document.getElementById('instituicaoForm').style.display = 'block';
+            document.getElementById('instituicoesCadastradas').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
