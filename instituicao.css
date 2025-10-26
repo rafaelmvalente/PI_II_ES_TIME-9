@@ -1,0 +1,118 @@
+body {
+    background: linear-gradient(120deg, #007bff 0%, #6dd5ed 100%);
+    min-height: 100vh;
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.container {
+    background: #fff;
+    max-width: 520px;
+    margin: 80px auto;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    padding: 40px 32px 32px 32px;
+}
+
+.bemvindo {
+    text-align: center;
+    color: #007bff;
+    font-size: 2em;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.info {
+    text-align: center;
+    color: #555;
+    margin-bottom: 24px;
+    font-size: 1.1em;
+}
+
+h2 {
+    text-align: left;
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 1.3em;
+}
+
+label {
+    display: block;
+    margin-top: 18px;
+    font-weight: 500;
+    color: #333;
+}
+
+input[type="text"], input[type="email"], input[type="password"], input[type="tel"] {
+    width: 100%;
+    padding: 10px;
+    margin-top: 7px;
+    border: 1px solid #b0c4de;
+    border-radius: 6px;
+    font-size: 1em;
+    background: #f7fafd;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    margin-top: 28px;
+    font-size: 1.1em;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+.link {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.link a {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.link a:hover {
+    text-decoration: underline;
+}
+
+/* Estilos adicionais para a lista de instituições */
+.instituicao-item {
+    background: #f8f9fa;
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+
+.btn-secondary {
+    background: #6c757d;
+}
+
+.btn-secondary:hover {
+    background: #545b62;
+}
+
+.btn-small {
+    width: auto;
+    padding: 8px 15px;
+    font-size: 14px;
+    margin: 5px;
+}
+
+.btn-excluir {
+    background: #dc3545;
+}
+
+.btn-excluir:hover {
+    background: #c82333;
+}
