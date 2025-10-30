@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Alunos - NotaDez</title>
+    <link href="styless/alunos.css" rel="stylesheet" type="text/css"/>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 NotaDez</h1>
+            <div class="user-info">
+                <a href="turmas.html">← Voltar para Turmas</a> | 
+                <span id="userInfo"></span>
+            </div>
+        </div>
+
+        <div class="info-turma" id="infoTurma">
+        </div>
+
+        <div class="stats" id="statsAlunos">
+        </div>
+        <div class="section">
+            <h2>📝 Cadastrar Aluno Manualmente</h2>
+            <form id="alunoForm">
+                <label for="matriculaAluno">Matrícula/RA:</label>
+                <input type="text" id="matriculaAluno" required placeholder="Ex: 123456, RA2025001">
+                
+                <label for="nomeAluno">Nome Completo:</label>
+                <input type="text" id="nomeAluno" required placeholder="Ex: João Silva Santos">
+                
+                <button type="submit" class="btn-success">➕ Adicionar Aluno</button>
+            </form>
+        </div>
+
+        <div class="section">
+            <h2>📁 Importar Alunos via CSV</h2>
+            <div class="importacao-section">
+                <div class="importacao-form">
+                    <label for="csvFile">Selecionar arquivo CSV:</label>
+                    <input type="file" id="csvFile" accept=".csv" required>
+                    <button type="button" onclick="importarCSV()" class="btn-warning" style="margin-top: 15px;">
+                        📤 Importar CSV
+                    </button>
+                </div>
+                <div class="importacao-info">
+                    <h4>Formato do CSV:</h4>
+                    <p>Use apenas as duas primeiras colunas:</p>
+                    <div class="csv-example">
+                        Matrícula,Nome<br>
+                        11111,Abel Antimônio<br>
+                        11112,Bianca Nióbio<br>
+                        11113,Carla Polônio<br>
+                    </div>
+                    <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                        <strong>Nota:</strong> Alunos com matrícula duplicada serão ignorados.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="selecao-multipla" id="selecaoMultipla">
+            <strong id="contadorSelecionados">0 alunos selecionados</strong>
+            <button onclick="excluirSelecionados()" class="btn-excluir btn-small" style="margin-left: 15px;">
+                🗑️ Excluir Selecionados
+            </button>
+            <button onclick="cancelarSelecao()" class="btn-secondary btn-small">
+                ✖️ Cancelar
+            </button>
+        </div>
+
+        <div class="section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>👨‍🎓 Lista de Alunos</h2>
+                <button onclick="ativarSelecaoMultipla()" class="btn-secondary btn-small">
+                    🔘 Seleção Múltipla
+                </button>
+            </div>
+            
+            <div class="alunos-grid" id="listaAlunos"></div>
+        </div>
+    </div>
+
+    <script>
+        const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        const turmaAtual = JSON.parse(localStorage.getItem('turmaAtual'));
+        const disciplinaAtual = JSON.parse(localStorage.getItem('disciplinaAtual'));
+        
+        if (!usuarioLogado) {
+            window.location.href = 'notadez.html';
+        }
+        if (!turmaAtual || !disciplinaAtual) {
+            window.location.href = 'turmas.html';
+        }
+
+        document.getElementById('userInfo').innerHTML = 
+            `${usuarioLogado.nome} | <a href="notadez.html" onclick="logout()">Sair</a>`;
+        
+        document.getElementById('infoTurma').innerHTML = `
+            <h3>Turma: ${turmaAtual.nome} (${turmaAtual.codigo})</h3>
+            <p><strong>Disciplina:</strong> ${disciplinaAtual.nome} (${disciplinaAtual.sigla})</p>
+            ${turmaAtual.horario ? `<p><strong>Horário:</strong> ${turmaAtual.horario}</p>` : ''}
+        `;
+
+        let modoSelecao = false;
+        let alunosSelecionados = new Set();
+
+        carregarAlunos();
+
+        document.getElementById('alunoForm').onsubmit = function(e) {
+            e.preventDefault();
+            
+            const aluno = {
+                matricula: document.getElementById('matriculaAluno').value.trim(),
+                nome: document.getElementById('nomeAluno').value.trim()
+            };
+
+            if (!aluno.matricula || !aluno.nome) {
+                alert('Preencha todos os campos!');
+                return;
+            }
+
+            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
+            const alunosTurma = alunos[turmaAtual.id] || [];
+            
+            if (alunosTurma.find(a => a.matricula === aluno.matricula)) {
+                alert('Já existe um aluno com esta matrícula!');
+                return;
+            }
+
+            alunosTurma.push(aluno);
+            alunos[turmaAtual.id] = alunosTurma;
+            localStorage.setItem('alunos', JSON.stringify(alunos));
+
+            alert('Aluno cadastrado com sucesso!');
+            document.getElementById('alunoForm').reset();
+            carregarAlunos();
+        };
+
+        function carregarAlunos() {
+            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
+            const alunosTurma = alunos[turmaAtual.id] || [];
+            
+            document.getElementById('statsAlunos').innerHTML = `
+                <div class="stat-item">👨‍🎓 ${alunosTurma.length} Alunos Cadastrados</div>
+                <div class="stat-item">📊 ${alunosTurma.length} Matrículas</div>
+            `;
+
+            const lista = document.getElementById('listaAlunos');
+            
+            if (alunosTurma.length === 0) {
+                lista.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1 / -1;">Nenhum aluno cadastrado nesta turma.</p>';
+                return;
+            }
+
+            lista.innerHTML = alunosTurma.map((aluno, index) => `
+                <div class="aluno-card">
+                    <div class="aluno-info">
+                        <div class="aluno-matricula">${aluno.matricula}</div>
+                        <div class="aluno-nome">${aluno.nome}</div>
+                    </div>
+                    <div class="acoes-aluno">
+                        ${modoSelecao ? `
+                            <input type="checkbox" class="checkbox-aluno" onchange="toggleSelecao(${index})" ${alunosSelecionados.has(index) ? 'checked' : ''}>
+                        ` : ''}
+                        <button class="btn-excluir btn-small" onclick="excluirAluno(${index})" ${modoSelecao ? 'style="display:none"' : ''}>
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function importarCSV() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Selecione um arquivo CSV!');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csvContent = e.target.result;
+                    const linhas = csvContent.split('\n');
+                    const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
+                    const alunosTurma = alunos[turmaAtual.id] || [];
+                    
+                    let alunosImportados = 0;
+                    let alunosDuplicados = 0;
+
+                    for (let i = 1; i < linhas.length; i++) {
+                        const linha = linhas[i].trim();
+                        if (!linha) continue;
+                        
+                        const colunas = linha.split(',');
+                        if (colunas.length < 2) continue;
+                        
+                        const matricula = colunas[0].trim();
+                        const nome = colunas[1].trim();
+                        
+                        if (!matricula || !nome) continue;
+                        
+                        if (!alunosTurma.find(a => a.matricula === matricula)) {
+                            alunosTurma.push({ matricula, nome });
+                            alunosImportados++;
+                        } else {
+                            alunosDuplicados++;
+                        }
+                    }
+
+                    alunos[turmaAtual.id] = alunosTurma;
+                    localStorage.setItem('alunos', JSON.stringify(alunos));
+
+                    alert(`Importação concluída!\n✅ ${alunosImportados} alunos importados\n⚠️ ${alunosDuplicados} duplicados ignorados`);
+                    
+                    fileInput.value = '';
+                    carregarAlunos();
+                    
+                } catch (error) {
+                    alert('Erro ao processar arquivo CSV. Verifique o formato.');
+                    console.error(error);
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        function ativarSelecaoMultipla() {
+            modoSelecao = true;
+            alunosSelecionados.clear();
+            document.getElementById('selecaoMultipla').style.display = 'block';
+            document.getElementById('contadorSelecionados').textContent = '0 alunos selecionados';
+            carregarAlunos();
+        }
+
+        function toggleSelecao(index) {
+            if (alunosSelecionados.has(index)) {
+                alunosSelecionados.delete(index);
+            } else {
+                alunosSelecionados.add(index);
+            }
+            document.getElementById('contadorSelecionados').textContent = 
+                `${alunosSelecionados.size} aluno(s) selecionado(s)`;
+        }
+
+        function excluirSelecionados() {
+            if (alunosSelecionados.size === 0) {
+                alert('Selecione pelo menos um aluno!');
+                return;
+            }
+
+            if (!confirm(`Tem certeza que deseja excluir ${alunosSelecionados.size} aluno(s)?`)) {
+                return;
+            }
+
+            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
+            let alunosTurma = alunos[turmaAtual.id] || [];
+            
+            const indices = Array.from(alunosSelecionados).sort((a, b) => b - a);
+            indices.forEach(index => {
+                alunosTurma.splice(index, 1);
+            });
+
+            alunos[turmaAtual.id] = alunosTurma;
+            localStorage.setItem('alunos', JSON.stringify(alunos));
+
+            cancelarSelecao();
+            carregarAlunos();
+            alert(`${indices.length} aluno(s) excluído(s) com sucesso!`);
+        }
+
+        function cancelarSelecao() {
+            modoSelecao = false;
+            alunosSelecionados.clear();
+            document.getElementById('selecaoMultipla').style.display = 'none';
+            carregarAlunos();
+        }
+
+        function excluirAluno(index) {
+            if (!confirm('Tem certeza que deseja excluir este aluno?')) {
+                return;
+            }
+
+            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
+            const alunosTurma = alunos[turmaAtual.id] || [];
+            
+            alunosTurma.splice(index, 1);
+            alunos[turmaAtual.id] = alunosTurma;
+            localStorage.setItem('alunos', JSON.stringify(alunos));
+
+            carregarAlunos();
+            alert('Aluno excluído com sucesso!');
+        }
+
+        function logout() {
+            localStorage.removeItem('usuarioLogado');
+        }
+    </script>
+</body>
+</html>
