@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lançar Notas - NotaDez</title>
+  <link href="styless/componentes.css" rel="stylesheet" type="text/css"/>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📚 NotaDez</h1>
+      <div class="user-info">
+        <a href="turmas.html">← Voltar para Turmas</a> |
+        <span id="userInfo"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="infoTopo" class="row" style="margin-bottom:16px;"></div>
+
+      <!-- Seleção de aluno -->
+      <div class="field">
+        <label for="alunoSelect">Aluno</label>
+        <select id="alunoSelect"></select>
+      </div>
+
+      <!-- Entradas de notas -->
+      <div class="grid-3" style="margin-top:10px;">
+        <div class="field">
+          <label for="nota1">Nota 1</label>
+          <input type="number" id="nota1" min="0" max="10" step="0.1" placeholder="0 a 10">
+        </div>
+        <div class="field">
+          <label for="nota2">Nota 2</label>
+          <input type="number" id="nota2" min="0" max="10" step="0.1" placeholder="0 a 10">
+        </div>
+        <div class="field">
+          <label for="nota3">Nota 3</label>
+          <input type="number" id="nota3" min="0" max="10" step="0.1" placeholder="0 a 10">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-success" id="btnSalvar">➕ Cadastrar/Salvar Notas</button>
+        <button class="btn" id="btnMedia">🧮 Calcular Média</button>
+        <button class="btn btn-secondary" id="btnLer">📖 Ler Notas do Aluno</button>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <span class="chip" id="chipStatus">Nenhum cálculo ainda</span>
+      </div>
+
+      <div style="margin-top:16px;">
+        <h3>Notas do aluno selecionado</h3>
+        <div id="boxNotas" class="notas-lista"></div>
+        <h3>Média</h3>
+        <div id="boxMedia" class="notas-lista"></div>
+      </div>
+    </div>
+
+    <!-- Tabela de resumo -->
+    <div class="card" style="margin-top:20px;">
+      <h2>👨‍🎓 Alunos da turma</h2>
+      <table class="table" id="tabelaAlunos">
+        <thead>
+          <tr>
+            <th>Matrícula</th>
+            <th>Nome</th>
+            <th>Notas</th>
+            <th>Média</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyAlunos"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+    const turmaAtual = JSON.parse(localStorage.getItem('turmaAtual'));
+    const disciplinaAtual = JSON.parse(localStorage.getItem('disciplinaAtual'));
+
+    if (!usuarioLogado) { window.location.href = 'notadez.html'; }
+    if (!turmaAtual || !disciplinaAtual) { window.location.href = 'turmas.html'; }
+
+    document.getElementById('userInfo').innerHTML = 
+      `${usuarioLogado.nome} | <a href="notadez.html" onclick="logout()">Sair</a>`;
+
+    document.getElementById('infoTopo').innerHTML = `
+      <span class="chip"><strong>Disciplina:</strong> ${disciplinaAtual.nome} (${disciplinaAtual.sigla})</span>
+      <span class="chip"><strong>Turma:</strong> ${turmaAtual.nome} (${turmaAtual.codigo})</span>
+      ${turmaAtual.horario ? `<span class="chip"><strong>Horário:</strong> ${turmaAtual.horario}</span>` : '' }
+    `;
+
+    const alunosPorTurma = JSON.parse(localStorage.getItem('alunos') || '{}');
+    const alunosDaTurma = alunosPorTurma[turmaAtual.id] || [];
+
+    const alunoSelect = document.getElementById('alunoSelect');
+    alunoSelect.innerHTML = alunosDaTurma.length
+      ? alunosDaTurma.map(a => `<option value="${a.matricula}">${a.matricula} - ${a.nome}</option>`).join('')
+      : '<option value="">Nenhum aluno cadastrado</option>';
+
+    function getNotasStore() { return JSON.parse(localStorage.getItem('notas') || '{}'); }
+    function setNotasStore(obj) { localStorage.setItem('notas', JSON.stringify(obj)); }
+
+    function parseNota(id) {
+      const v = parseFloat(document.getElementById(id).value);
+      return isNaN(v) ? null : v;
+    }
+    function limparCampos() { ['nota1','nota2','nota3'].forEach(id => document.getElementById(id).value = ''); }
+    function setStatus(msg, ok=false) {
+      const chip = document.getElementById('chipStatus');
+      chip.textContent = msg;
+      chip.style.borderLeftColor = ok ? '#28a745' : '#007bff';
+    }
+    function renderNotas(alvo, notas) {
+      if (!notas || (notas.n1==null && notas.n2==null && notas.n3==null)) {
+        alvo.innerHTML = '<p>—</p>'; return;
+      }
+      const p = (v) => v==null ? '—' : v.toFixed(2);
+      alvo.innerHTML = `
+        <p>Nota 1: <strong>${p(notas.n1)}</strong></p>
+        <p>Nota 2: <strong>${p(notas.n2)}</strong></p>
+        <p>Nota 3: <strong>${p(notas.n3)}</strong></p>
+      `;
+    }
+
+    function cadastrarNotas() {
+      const matricula = alunoSelect.value;
+      if (!matricula) { alert('Selecione um aluno.'); return; }
+
+      const n1 = parseNota('nota1');
+      const n2 = parseNota('nota2');
+      const n3 = parseNota('nota3');
+
+      if (n1==null || n2==null || n3==null) {
+        alert('Preencha todas as notas.'); return;
+      }
+
+      const store = getNotasStore();
+      const chave = `${turmaAtual.id}-${matricula}`;
+      store[chave] = { n1, n2, n3 };
+      setNotasStore(store);
+
+      renderNotas(document.getElementById('boxNotas'), store[chave]);
+      document.getElementById('boxMedia').innerHTML = '';
+      setStatus('Notas salvas!', true);
+      atualizarTabela();
+    }
+
+    function lerNotasAluno() {
+      const matricula = alunoSelect.value;
+      if (!matricula) { alert('Selecione um aluno.'); return; }
+
+      const store = getNotasStore();
+      const chave = `${turmaAtual.id}-${matricula}`;
+      const dados = store[chave];
+
+      renderNotas(document.getElementById('boxNotas'), dados);
+      document.getElementById('boxMedia').innerHTML = '';
+      setStatus(dados ? 'Notas carregadas.' : 'Nenhuma nota cadastrada.');
+      if (dados) {
+        document.getElementById('nota1').value = dados.n1 ?? '';
+        document.getElementById('nota2').value = dados.n2 ?? '';
+        document.getElementById('nota3').value = dados.n3 ?? '';
+      } else {
+        limparCampos();
+      }
+    }
+
+    function calcularMediaAluno() {
+      const matricula = alunoSelect.value;
+      if (!matricula) { alert('Selecione um aluno.'); return; }
+
+      const store = getNotasStore();
+      const chave = `${turmaAtual.id}-${matricula}`;
+      const dados = store[chave];
+
+      if (!dados) { alert('Cadastre as notas primeiro.'); return; }
+
+      const valores = [dados.n1, dados.n2, dados.n3].filter(v => typeof v === 'number');
+      const media = valores.reduce((a,b)=>a+b,0) / valores.length;
+
+      document.getElementById('boxMedia').innerHTML = `<p><strong>Média:</strong> ${media.toFixed(2)}</p>`;
+      setStatus('Média calculada.', true);
+      atualizarTabela();
+    }
+
+    function atualizarTabela() {
+      const store = getNotasStore();
+      const tbody = document.getElementById('tbodyAlunos');
+      tbody.innerHTML = alunosDaTurma.map(a => {
+        const chave = `${turmaAtual.id}-${a.matricula}`;
+        const dados = store[chave];
+        let notasTxt = '—';
+        let mediaTxt = '—';
+        let classe = 'warn';
+
+        if (dados) {
+          const n1 = dados.n1 ?? null;
+          const n2 = dados.n2 ?? null;
+          const n3 = dados.n3 ?? null;
+          const arr = [n1,n2,n3].filter(v => typeof v === 'number');
+          notasTxt = `N1:${n1??'—'} | N2:${n2??'—'} | N3:${n3??'—'}`;
+          if (arr.length) {
+            const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+            mediaTxt = m.toFixed(2);
+            classe = m >= 6 ? 'ok' : 'warn';
+          }
+        }
+
+        return `
+          <tr>
+            <td>${a.matricula}</td>
+            <td>${a.nome}</td>
+            <td>${notasTxt}</td>
+            <td class="${classe}">${mediaTxt}</td>
+            <td><button class="btn btn-secondary" onclick="selecionarAluno('${a.matricula}')">Editar</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function selecionarAluno(matricula) {
+      alunoSelect.value = matricula;
+      lerNotasAluno();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    document.getElementById('btnSalvar').addEventListener('click', cadastrarNotas);
+    document.getElementById('btnLer').addEventListener('click', lerNotasAluno);
+    document.getElementById('btnMedia').addEventListener('click', calcularMediaAluno);
+
+    (function init() {
+      if (!alunosDaTurma.length) {
+        setStatus('Cadastre alunos nesta turma para lançar notas.');
+      } else {
+        setStatus('Selecione um aluno e informe as três notas.');
+      }
+      atualizarTabela();
+    })();
+
+    function logout() {
+      localStorage.removeItem('usuarioLogado');
+    }
+  </script>
+</body>
+</html>
