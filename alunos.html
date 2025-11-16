@@ -20,6 +20,10 @@
 
         <div class="stats" id="statsAlunos">
         </div>
+
+        <!-- Mensagens -->
+        <div id="mensagem" class="mensagem" style="display: none;"></div>
+
         <div class="section">
             <h2>📝 Cadastrar Aluno Manualmente</h2>
             <form id="alunoForm">
@@ -82,6 +86,7 @@
     </div>
 
     <script>
+        const API_BASE = 'http://localhost:4000';
         const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
         const turmaAtual = JSON.parse(localStorage.getItem('turmaAtual'));
         const disciplinaAtual = JSON.parse(localStorage.getItem('disciplinaAtual'));
@@ -104,124 +109,149 @@
 
         let modoSelecao = false;
         let alunosSelecionados = new Set();
+        let alunosData = []; // Array para armazenar alunos com IDs
 
+        // Carregar alunos ao iniciar
         carregarAlunos();
 
-        document.getElementById('alunoForm').onsubmit = function(e) {
+        // Função para fazer requisições à API
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('token');
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token && { 'Authorization': `Bearer ${token}` }),
+                    ...options.headers
+                },
+                ...options
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, config);
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('usuarioLogado');
+                    window.location.href = 'notadez.html';
+                    return;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro na requisição:', error);
+                mostrarMensagem('❌ Erro de conexão com o servidor', 'erro');
+                throw error;
+            }
+        }
+
+        // Cadastrar aluno via API
+        document.getElementById('alunoForm').onsubmit = async function(e) {
             e.preventDefault();
             
             const aluno = {
                 matricula: document.getElementById('matriculaAluno').value.trim(),
-                nome: document.getElementById('nomeAluno').value.trim()
+                nome: document.getElementById('nomeAluno').value.trim(),
+                turmaId: turmaAtual.id
             };
 
             if (!aluno.matricula || !aluno.nome) {
-                alert('Preencha todos os campos!');
+                mostrarMensagem('❌ Preencha todos os campos!', 'erro');
                 return;
             }
 
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            const alunosTurma = alunos[turmaAtual.id] || [];
-            
-            if (alunosTurma.find(a => a.matricula === aluno.matricula)) {
-                alert('Já existe um aluno com esta matrícula!');
-                return;
+            try {
+                const resultado = await apiRequest('/api/alunos', {
+                    method: 'POST',
+                    body: JSON.stringify(aluno)
+                });
+
+                if (resultado.success) {
+                    mostrarMensagem('✅ Aluno cadastrado com sucesso!', 'sucesso');
+                    document.getElementById('alunoForm').reset();
+                    await carregarAlunos();
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao cadastrar aluno'), 'erro');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao cadastrar aluno', 'erro');
             }
-
-            alunosTurma.push(aluno);
-            alunos[turmaAtual.id] = alunosTurma;
-            localStorage.setItem('alunos', JSON.stringify(alunos));
-
-            alert('Aluno cadastrado com sucesso!');
-            document.getElementById('alunoForm').reset();
-            carregarAlunos();
         };
 
-        function carregarAlunos() {
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            const alunosTurma = alunos[turmaAtual.id] || [];
-            
-            document.getElementById('statsAlunos').innerHTML = `
-                <div class="stat-item">👨‍🎓 ${alunosTurma.length} Alunos Cadastrados</div>
-                <div class="stat-item">📊 ${alunosTurma.length} Matrículas</div>
-            `;
+        // Carregar alunos da API
+        async function carregarAlunos() {
+            try {
+                const resultado = await apiRequest(`/api/alunos/turma/${turmaAtual.id}`);
+                
+                if (resultado.success) {
+                    alunosData = resultado.data;
+                    
+                    document.getElementById('statsAlunos').innerHTML = `
+                        <div class="stat-item">👨‍🎓 ${alunosData.length} Alunos Cadastrados</div>
+                        <div class="stat-item">📊 ${alunosData.length} Matrículas</div>
+                    `;
 
-            const lista = document.getElementById('listaAlunos');
-            
-            if (alunosTurma.length === 0) {
-                lista.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1 / -1;">Nenhum aluno cadastrado nesta turma.</p>';
-                return;
+                    const lista = document.getElementById('listaAlunos');
+                    
+                    if (alunosData.length === 0) {
+                        lista.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1 / -1;">Nenhum aluno cadastrado nesta turma.</p>';
+                        return;
+                    }
+
+                    lista.innerHTML = alunosData.map((aluno, index) => `
+                        <div class="aluno-card">
+                            <div class="aluno-info">
+                                <div class="aluno-matricula">${aluno.matricula}</div>
+                                <div class="aluno-nome">${aluno.nome}</div>
+                            </div>
+                            <div class="acoes-aluno">
+                                ${modoSelecao ? `
+                                    <input type="checkbox" class="checkbox-aluno" onchange="toggleSelecao(${aluno.id})" ${alunosSelecionados.has(aluno.id) ? 'checked' : ''}>
+                                ` : ''}
+                                <button class="btn-excluir btn-small" onclick="excluirAluno(${aluno.id})" ${modoSelecao ? 'style="display:none"' : ''}>
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar alunos', 'erro');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar alunos', 'erro');
             }
-
-            lista.innerHTML = alunosTurma.map((aluno, index) => `
-                <div class="aluno-card">
-                    <div class="aluno-info">
-                        <div class="aluno-matricula">${aluno.matricula}</div>
-                        <div class="aluno-nome">${aluno.nome}</div>
-                    </div>
-                    <div class="acoes-aluno">
-                        ${modoSelecao ? `
-                            <input type="checkbox" class="checkbox-aluno" onchange="toggleSelecao(${index})" ${alunosSelecionados.has(index) ? 'checked' : ''}>
-                        ` : ''}
-                        <button class="btn-excluir btn-small" onclick="excluirAluno(${index})" ${modoSelecao ? 'style="display:none"' : ''}>
-                            🗑️
-                        </button>
-                    </div>
-                </div>
-            `).join('');
         }
 
-        function importarCSV() {
+        // Importar CSV via API
+        async function importarCSV() {
             const fileInput = document.getElementById('csvFile');
             const file = fileInput.files[0];
             
             if (!file) {
-                alert('Selecione um arquivo CSV!');
+                mostrarMensagem('❌ Selecione um arquivo CSV!', 'erro');
                 return;
             }
 
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     const csvContent = e.target.result;
-                    const linhas = csvContent.split('\n');
-                    const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-                    const alunosTurma = alunos[turmaAtual.id] || [];
                     
-                    let alunosImportados = 0;
-                    let alunosDuplicados = 0;
+                    const resultado = await apiRequest(`/api/alunos/import/csv/${turmaAtual.id}`, {
+                        method: 'POST',
+                        body: JSON.stringify({ csv: csvContent })
+                    });
 
-                    for (let i = 1; i < linhas.length; i++) {
-                        const linha = linhas[i].trim();
-                        if (!linha) continue;
-                        
-                        const colunas = linha.split(',');
-                        if (colunas.length < 2) continue;
-                        
-                        const matricula = colunas[0].trim();
-                        const nome = colunas[1].trim();
-                        
-                        if (!matricula || !nome) continue;
-                        
-                        if (!alunosTurma.find(a => a.matricula === matricula)) {
-                            alunosTurma.push({ matricula, nome });
-                            alunosImportados++;
-                        } else {
-                            alunosDuplicados++;
-                        }
+                    if (resultado.success) {
+                        mostrarMensagem(`✅ ${resultado.data.importados} alunos importados | ⚠️ ${resultado.data.duplicados} duplicados ignorados`, 'sucesso');
+                        fileInput.value = '';
+                        await carregarAlunos();
+                    } else {
+                        mostrarMensagem('❌ ' + (resultado.message || 'Erro na importação'), 'erro');
                     }
-
-                    alunos[turmaAtual.id] = alunosTurma;
-                    localStorage.setItem('alunos', JSON.stringify(alunos));
-
-                    alert(`Importação concluída!\n✅ ${alunosImportados} alunos importados\n⚠️ ${alunosDuplicados} duplicados ignorados`);
-                    
-                    fileInput.value = '';
-                    carregarAlunos();
                     
                 } catch (error) {
-                    alert('Erro ao processar arquivo CSV. Verifique o formato.');
-                    console.error(error);
+                    mostrarMensagem('❌ Erro ao processar arquivo CSV', 'erro');
                 }
             };
             
@@ -236,19 +266,19 @@
             carregarAlunos();
         }
 
-        function toggleSelecao(index) {
-            if (alunosSelecionados.has(index)) {
-                alunosSelecionados.delete(index);
+        function toggleSelecao(alunoId) {
+            if (alunosSelecionados.has(alunoId)) {
+                alunosSelecionados.delete(alunoId);
             } else {
-                alunosSelecionados.add(index);
+                alunosSelecionados.add(alunoId);
             }
             document.getElementById('contadorSelecionados').textContent = 
                 `${alunosSelecionados.size} aluno(s) selecionado(s)`;
         }
 
-        function excluirSelecionados() {
+        async function excluirSelecionados() {
             if (alunosSelecionados.size === 0) {
-                alert('Selecione pelo menos um aluno!');
+                mostrarMensagem('❌ Selecione pelo menos um aluno!', 'erro');
                 return;
             }
 
@@ -256,20 +286,37 @@
                 return;
             }
 
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            let alunosTurma = alunos[turmaAtual.id] || [];
-            
-            const indices = Array.from(alunosSelecionados).sort((a, b) => b - a);
-            indices.forEach(index => {
-                alunosTurma.splice(index, 1);
-            });
+            try {
+                const alunoIds = Array.from(alunosSelecionados);
+                let sucessos = 0;
+                let erros = 0;
 
-            alunos[turmaAtual.id] = alunosTurma;
-            localStorage.setItem('alunos', JSON.stringify(alunos));
+                for (const alunoId of alunoIds) {
+                    try {
+                        const resultado = await apiRequest(`/api/alunos/${alunoId}`, {
+                            method: 'DELETE'
+                        });
+                        if (resultado.success) {
+                            sucessos++;
+                        } else {
+                            erros++;
+                        }
+                    } catch (error) {
+                        erros++;
+                    }
+                }
 
-            cancelarSelecao();
-            carregarAlunos();
-            alert(`${indices.length} aluno(s) excluído(s) com sucesso!`);
+                cancelarSelecao();
+                await carregarAlunos();
+                
+                if (erros === 0) {
+                    mostrarMensagem(`✅ ${sucessos} aluno(s) excluído(s) com sucesso!`, 'sucesso');
+                } else {
+                    mostrarMensagem(`⚠️ ${sucessos} excluídos | ❌ ${erros} erros`, 'erro');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao excluir alunos', 'erro');
+            }
         }
 
         function cancelarSelecao() {
@@ -279,25 +326,43 @@
             carregarAlunos();
         }
 
-        function excluirAluno(index) {
+        async function excluirAluno(alunoId) {
             if (!confirm('Tem certeza que deseja excluir este aluno?')) {
                 return;
             }
 
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            const alunosTurma = alunos[turmaAtual.id] || [];
-            
-            alunosTurma.splice(index, 1);
-            alunos[turmaAtual.id] = alunosTurma;
-            localStorage.setItem('alunos', JSON.stringify(alunos));
+            try {
+                const resultado = await apiRequest(`/api/alunos/${alunoId}`, {
+                    method: 'DELETE'
+                });
 
-            carregarAlunos();
-            alert('Aluno excluído com sucesso!');
+                if (resultado.success) {
+                    mostrarMensagem('✅ Aluno excluído com sucesso!', 'sucesso');
+                    await carregarAlunos();
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao excluir aluno'), 'erro');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao excluir aluno', 'erro');
+            }
+        }
+
+        function mostrarMensagem(texto, tipo) {
+            const mensagemDiv = document.getElementById('mensagem');
+            mensagemDiv.textContent = texto;
+            mensagemDiv.className = `mensagem ${tipo}`;
+            mensagemDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                mensagemDiv.style.display = 'none';
+            }, 5000);
         }
 
         function logout() {
             localStorage.removeItem('usuarioLogado');
+            localStorage.removeItem('token');
         }
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
