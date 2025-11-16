@@ -32,78 +32,160 @@
     </div>
 
     <script>
+        const API_BASE = 'http://localhost:4000';
         const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        
         if (!usuarioLogado) {
             window.location.href = 'notadez.html';
         }
 
         document.getElementById('bemvindo').textContent = `Bem-vindo, ${usuarioLogado.nome}!`;
 
-        carregarInstituicoes();
+        // Função para fazer requisições à API
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('token');
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token && { 'Authorization': `Bearer ${token}` }),
+                    ...options.headers
+                },
+                ...options
+            };
 
-        document.getElementById('instituicaoForm').onsubmit = function(e) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, config);
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('usuarioLogado');
+                    window.location.href = 'notadez.html';
+                    return;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro na requisição:', error);
+                mostrarMensagem('❌ Erro de conexão com o servidor');
+                throw error;
+            }
+        }
+
+        // Carregar instituições da API
+        async function carregarInstituicoes() {
+            try {
+                const resultado = await apiRequest('/api/instituicoes');
+                
+                if (resultado.success) {
+                    const instituicoes = resultado.data;
+                    
+                    if (instituicoes.length > 0) {
+                        document.getElementById('instituicoesCadastradas').style.display = 'block';
+                        const lista = document.getElementById('listaInstituicoes');
+                        
+                        lista.innerHTML = instituicoes.map(inst => `
+                            <div style="background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px;">
+                                <strong>${inst.nome}</strong> - ${inst.curso}
+                                <button onclick="selecionarInstituicao(${inst.id})" style="background: #28a745; margin-left: 10px; padding: 5px 10px;">
+                                    Selecionar
+                                </button>
+                                <button onclick="excluirInstituicao(${inst.id})" style="background: #dc3545; margin-left: 5px; padding: 5px 10px;">
+                                    Excluir
+                                </button>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar instituições');
+                }
+            } catch (error) {
+                console.error('Erro ao carregar instituições:', error);
+            }
+        }
+
+        // Cadastrar instituição via API
+        document.getElementById('instituicaoForm').onsubmit = async function(e) {
             e.preventDefault();
             
             const instituicao = {
-                id: Date.now(), 
                 nome: document.getElementById('instituicao').value,
-                curso: document.getElementById('curso').value,
-                usuarioEmail: usuarioLogado.email 
+                curso: document.getElementById('curso').value
             };
 
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            instituicoes.push(instituicao);
-            localStorage.setItem('instituicoes', JSON.stringify(instituicoes));
+            try {
+                const resultado = await apiRequest('/api/instituicoes', {
+                    method: 'POST',
+                    body: JSON.stringify(instituicao)
+                });
 
-            localStorage.setItem('instituicaoAtual', JSON.stringify(instituicao));
-
-            window.location.href = 'disciplinas.html';
+                if (resultado.success) {
+                    // Salvar a instituição atual no localStorage para uso posterior
+                    localStorage.setItem('instituicaoAtual', JSON.stringify(resultado.data));
+                    window.location.href = 'disciplinas.html';
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao cadastrar instituição'));
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao cadastrar instituição');
+            }
         };
 
-        function carregarInstituicoes() {
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            const instituicoesUsuario = instituicoes.filter(inst => inst.usuarioEmail === usuarioLogado.email);
-            
-            if (instituicoesUsuario.length > 0) {
-                document.getElementById('instituicoesCadastradas').style.display = 'block';
-                const lista = document.getElementById('listaInstituicoes');
+        async function selecionarInstituicao(id) {
+            try {
+                const resultado = await apiRequest(`/api/instituicoes/${id}`);
                 
-                lista.innerHTML = instituicoesUsuario.map(inst => `
-                    <div style="background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px;">
-                        <strong>${inst.nome}</strong> - ${inst.curso}
-                        <button onclick="selecionarInstituicao(${inst.id})" style="background: #28a745; margin-left: 10px; padding: 5px 10px;">
-                            Selecionar
-                        </button>
-                        <button onclick="excluirInstituicao(${inst.id})" style="background: #dc3545; margin-left: 5px; padding: 5px 10px;">
-                            Excluir
-                        </button>
-                    </div>
-                `).join('');
+                if (resultado.success) {
+                    localStorage.setItem('instituicaoAtual', JSON.stringify(resultado.data));
+                    window.location.href = 'disciplinas.html';
+                } else {
+                    mostrarMensagem('❌ Erro ao selecionar instituição');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao selecionar instituição');
             }
         }
 
-        function selecionarInstituicao(id) {
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            const instituicao = instituicoes.find(inst => inst.id === id);
-            
-            if (instituicao) {
-                localStorage.setItem('instituicaoAtual', JSON.stringify(instituicao));
-                window.location.href = 'disciplinas.html';
-            }
-        }
+        async function excluirInstituicao(id) {
+            try {
+                // Verificar se há disciplinas vinculadas
+                const resultadoDisciplinas = await apiRequest(`/api/disciplinas/instituicao/${id}`);
+                
+                if (resultadoDisciplinas.success && resultadoDisciplinas.data.length > 0) {
+                    mostrarMensagem('❌ Não é possível excluir esta instituição pois existem disciplinas vinculadas a ela.');
+                    return;
+                }
+                
+                if (confirm('Tem certeza que deseja excluir esta instituição?')) {
+                    const resultado = await apiRequest(`/api/instituicoes/${id}`, {
+                        method: 'DELETE'
+                    });
 
-        function excluirInstituicao(id) {
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            const instituicoesFiltradas = instituicoes.filter(inst => inst.id !== id);
-            
-            localStorage.setItem('instituicoes', JSON.stringify(instituicoesFiltradas));
-            carregarInstituicoes();
+                    if (resultado.success) {
+                        mostrarMensagem('✅ Instituição excluída com sucesso!');
+                        await carregarInstituicoes();
+                    } else {
+                        mostrarMensagem('❌ ' + (resultado.message || 'Erro ao excluir instituição'));
+                    }
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao excluir instituição');
+            }
         }
 
         function novaInstituicao() {
             document.getElementById('instituicaoForm').style.display = 'block';
             document.getElementById('instituicoesCadastradas').style.display = 'none';
         }
+
+        function mostrarMensagem(texto) {
+            alert(texto);
+        }
+
+        // Inicialização
+        (async function init() {
+            await carregarInstituicoes();
+        })();
     </script>
 </body>
 </html>
