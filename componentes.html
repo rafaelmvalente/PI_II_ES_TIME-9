@@ -44,6 +44,7 @@
         <button class="btn btn-success" id="btnSalvar">➕ Cadastrar/Salvar Notas</button>
         <button class="btn" id="btnMedia">🧮 Calcular Média</button>
         <button class="btn btn-secondary" id="btnLer">📖 Ler Notas do Aluno</button>
+        <button class="btn btn-warning" onclick="exportarNotas()">📤 Exportar Notas</button>
       </div>
 
       <div class="row" style="margin-top:16px;">
@@ -77,6 +78,7 @@
   </div>
 
   <script>
+    const API_BASE = 'http://localhost:4000';
     const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
     const turmaAtual = JSON.parse(localStorage.getItem('turmaAtual'));
     const disciplinaAtual = JSON.parse(localStorage.getItem('disciplinaAtual'));
@@ -93,27 +95,108 @@
       ${turmaAtual.horario ? `<span class="chip"><strong>Horário:</strong> ${turmaAtual.horario}</span>` : '' }
     `;
 
-    const alunosPorTurma = JSON.parse(localStorage.getItem('alunos') || '{}');
-    const alunosDaTurma = alunosPorTurma[turmaAtual.id] || [];
+    let alunosData = [];
+    let componentesData = [];
 
-    const alunoSelect = document.getElementById('alunoSelect');
-    alunoSelect.innerHTML = alunosDaTurma.length
-      ? alunosDaTurma.map(a => `<option value="${a.matricula}">${a.matricula} - ${a.nome}</option>`).join('')
-      : '<option value="">Nenhum aluno cadastrado</option>';
+    // Carregar dados iniciais
+    carregarAlunos();
+    carregarComponentes();
 
-    function getNotasStore() { return JSON.parse(localStorage.getItem('notas') || '{}'); }
-    function setNotasStore(obj) { localStorage.setItem('notas', JSON.stringify(obj)); }
+    // Função para fazer requisições à API
+    async function apiRequest(endpoint, options = {}) {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+          ...options.headers
+        },
+        ...options
+      };
+
+      try {
+        const response = await fetch(`${API_BASE}${endpoint}`, config);
+        
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('usuarioLogado');
+          window.location.href = 'notadez.html';
+          return;
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Erro na requisição:', error);
+        mostrarMensagem('❌ Erro de conexão com o servidor');
+        throw error;
+      }
+    }
+
+    // Carregar alunos da API
+    async function carregarAlunos() {
+      try {
+        const resultado = await apiRequest(`/api/alunos/turma/${turmaAtual.id}`);
+        
+        if (resultado.success) {
+          alunosData = resultado.data;
+          
+          const alunoSelect = document.getElementById('alunoSelect');
+          alunoSelect.innerHTML = alunosData.length
+            ? alunosData.map(a => `<option value="${a.id}">${a.matricula} - ${a.nome}</option>`).join('')
+            : '<option value="">Nenhum aluno cadastrado</option>';
+
+          await carregarNotasTurma();
+        } else {
+          mostrarMensagem('❌ Erro ao carregar alunos');
+        }
+      } catch (error) {
+        mostrarMensagem('❌ Erro ao carregar alunos');
+      }
+    }
+
+    // Carregar componentes da disciplina
+    async function carregarComponentes() {
+      try {
+        const resultado = await apiRequest(`/api/componentes/disciplina/${disciplinaAtual.id}`);
+        
+        if (resultado.success) {
+          componentesData = resultado.data;
+          // Aqui você pode adaptar para usar componentes dinâmicos se quiser
+        }
+      } catch (error) {
+        console.error('Erro ao carregar componentes:', error);
+      }
+    }
+
+    // Carregar notas da turma
+    async function carregarNotasTurma() {
+      try {
+        const resultado = await apiRequest(`/api/notas/turma/${turmaAtual.id}`);
+        
+        if (resultado.success) {
+          atualizarTabela(resultado.data);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar notas:', error);
+      }
+    }
 
     function parseNota(id) {
       const v = parseFloat(document.getElementById(id).value);
       return isNaN(v) ? null : v;
     }
-    function limparCampos() { ['nota1','nota2','nota3'].forEach(id => document.getElementById(id).value = ''); }
+
+    function limparCampos() { 
+      ['nota1','nota2','nota3'].forEach(id => document.getElementById(id).value = ''); 
+    }
+
     function setStatus(msg, ok=false) {
       const chip = document.getElementById('chipStatus');
       chip.textContent = msg;
       chip.style.borderLeftColor = ok ? '#28a745' : '#007bff';
     }
+
     function renderNotas(alvo, notas) {
       if (!notas || (notas.n1==null && notas.n2==null && notas.n3==null)) {
         alvo.innerHTML = '<p>—</p>'; return;
@@ -126,81 +209,115 @@
       `;
     }
 
-    function cadastrarNotas() {
-      const matricula = alunoSelect.value;
-      if (!matricula) { alert('Selecione um aluno.'); return; }
+    // Cadastrar notas via API
+    async function cadastrarNotas() {
+      const alunoId = document.getElementById('alunoSelect').value;
+      if (!alunoId) { 
+        mostrarMensagem('❌ Selecione um aluno.');
+        return; 
+      }
 
       const n1 = parseNota('nota1');
       const n2 = parseNota('nota2');
       const n3 = parseNota('nota3');
 
       if (n1==null || n2==null || n3==null) {
-        alert('Preencha todas as notas.'); return;
+        mostrarMensagem('❌ Preencha todas as notas.');
+        return;
       }
 
-      const store = getNotasStore();
-      const chave = `${turmaAtual.id}-${matricula}`;
-      store[chave] = { n1, n2, n3 };
-      setNotasStore(store);
+      try {
+        const notasData = {
+          alunoId: parseInt(alunoId),
+          turmaId: turmaAtual.id,
+          notas: {
+            n1: n1,
+            n2: n2, 
+            n3: n3
+          }
+        };
 
-      renderNotas(document.getElementById('boxNotas'), store[chave]);
-      document.getElementById('boxMedia').innerHTML = '';
-      setStatus('Notas salvas!', true);
-      atualizarTabela();
+        const resultado = await apiRequest('/api/notas', {
+          method: 'POST',
+          body: JSON.stringify(notasData)
+        });
+
+        if (resultado.success) {
+          renderNotas(document.getElementById('boxNotas'), notasData.notas);
+          document.getElementById('boxMedia').innerHTML = '';
+          setStatus('✅ Notas salvas!', true);
+          await carregarNotasTurma();
+        } else {
+          mostrarMensagem('❌ ' + (resultado.message || 'Erro ao salvar notas'));
+        }
+      } catch (error) {
+        mostrarMensagem('❌ Erro ao salvar notas');
+      }
     }
 
-    function lerNotasAluno() {
-      const matricula = alunoSelect.value;
-      if (!matricula) { alert('Selecione um aluno.'); return; }
+    // Ler notas do aluno via API
+    async function lerNotasAluno() {
+      const alunoId = document.getElementById('alunoSelect').value;
+      if (!alunoId) { 
+        mostrarMensagem('❌ Selecione um aluno.');
+        return; 
+      }
 
-      const store = getNotasStore();
-      const chave = `${turmaAtual.id}-${matricula}`;
-      const dados = store[chave];
-
-      renderNotas(document.getElementById('boxNotas'), dados);
-      document.getElementById('boxMedia').innerHTML = '';
-      setStatus(dados ? 'Notas carregadas.' : 'Nenhuma nota cadastrada.');
-      if (dados) {
-        document.getElementById('nota1').value = dados.n1 ?? '';
-        document.getElementById('nota2').value = dados.n2 ?? '';
-        document.getElementById('nota3').value = dados.n3 ?? '';
-      } else {
-        limparCampos();
+      try {
+        const resultado = await apiRequest(`/api/notas/aluno/${alunoId}/turma/${turmaAtual.id}`);
+        
+        if (resultado.success) {
+          const notas = resultado.data?.notas || {};
+          renderNotas(document.getElementById('boxNotas'), notas);
+          document.getElementById('boxMedia').innerHTML = '';
+          setStatus(resultado.data ? '📖 Notas carregadas.' : 'ℹ️ Nenhuma nota cadastrada.');
+          
+          if (resultado.data) {
+            document.getElementById('nota1').value = notas.n1 ?? '';
+            document.getElementById('nota2').value = notas.n2 ?? '';
+            document.getElementById('nota3').value = notas.n3 ?? '';
+          } else {
+            limparCampos();
+          }
+        } else {
+          mostrarMensagem('❌ Erro ao carregar notas');
+        }
+      } catch (error) {
+        mostrarMensagem('❌ Erro ao carregar notas');
       }
     }
 
     function calcularMediaAluno() {
-      const matricula = alunoSelect.value;
-      if (!matricula) { alert('Selecione um aluno.'); return; }
+      const n1 = parseNota('nota1');
+      const n2 = parseNota('nota2');
+      const n3 = parseNota('nota3');
 
-      const store = getNotasStore();
-      const chave = `${turmaAtual.id}-${matricula}`;
-      const dados = store[chave];
+      if (n1==null || n2==null || n3==null) {
+        mostrarMensagem('❌ Preencha todas as notas primeiro.');
+        return;
+      }
 
-      if (!dados) { alert('Cadastre as notas primeiro.'); return; }
-
-      const valores = [dados.n1, dados.n2, dados.n3].filter(v => typeof v === 'number');
+      const valores = [n1, n2, n3].filter(v => typeof v === 'number');
       const media = valores.reduce((a,b)=>a+b,0) / valores.length;
 
       document.getElementById('boxMedia').innerHTML = `<p><strong>Média:</strong> ${media.toFixed(2)}</p>`;
-      setStatus('Média calculada.', true);
-      atualizarTabela();
+      setStatus('🧮 Média calculada.', true);
     }
 
-    function atualizarTabela() {
-      const store = getNotasStore();
+    function atualizarTabela(notasTurma) {
       const tbody = document.getElementById('tbodyAlunos');
-      tbody.innerHTML = alunosDaTurma.map(a => {
-        const chave = `${turmaAtual.id}-${a.matricula}`;
-        const dados = store[chave];
+      tbody.innerHTML = alunosData.map(aluno => {
+        const notasAluno = notasTurma.find(n => n.alunoId === aluno.id);
+        const notas = notasAluno?.notas || {};
+        
         let notasTxt = '—';
         let mediaTxt = '—';
         let classe = 'warn';
 
-        if (dados) {
-          const n1 = dados.n1 ?? null;
-          const n2 = dados.n2 ?? null;
-          const n3 = dados.n3 ?? null;
+        if (notasAluno) {
+          const n1 = notas.n1 ?? null;
+          const n2 = notas.n2 ?? null;
+          const n3 = notas.n3 ?? null;
           const arr = [n1,n2,n3].filter(v => typeof v === 'number');
           notasTxt = `N1:${n1??'—'} | N2:${n2??'—'} | N3:${n3??'—'}`;
           if (arr.length) {
@@ -212,37 +329,46 @@
 
         return `
           <tr>
-            <td>${a.matricula}</td>
-            <td>${a.nome}</td>
+            <td>${aluno.matricula}</td>
+            <td>${aluno.nome}</td>
             <td>${notasTxt}</td>
             <td class="${classe}">${mediaTxt}</td>
-            <td><button class="btn btn-secondary" onclick="selecionarAluno('${a.matricula}')">Editar</button></td>
+            <td><button class="btn btn-secondary" onclick="selecionarAluno(${aluno.id})">Editar</button></td>
           </tr>
         `;
       }).join('');
     }
 
-    function selecionarAluno(matricula) {
-      alunoSelect.value = matricula;
+    function selecionarAluno(alunoId) {
+      document.getElementById('alunoSelect').value = alunoId;
       lerNotasAluno();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function exportarNotas() {
+      window.location.href = 'exportar.html';
+    }
+
+    function mostrarMensagem(texto) {
+      alert(texto);
     }
 
     document.getElementById('btnSalvar').addEventListener('click', cadastrarNotas);
     document.getElementById('btnLer').addEventListener('click', lerNotasAluno);
     document.getElementById('btnMedia').addEventListener('click', calcularMediaAluno);
 
+    // Inicialização
     (function init() {
-      if (!alunosDaTurma.length) {
-        setStatus('Cadastre alunos nesta turma para lançar notas.');
+      if (alunosData.length === 0) {
+        setStatus('👥 Cadastre alunos nesta turma para lançar notas.');
       } else {
-        setStatus('Selecione um aluno e informe as três notas.');
+        setStatus('📝 Selecione um aluno e informe as três notas.');
       }
-      atualizarTabela();
     })();
 
     function logout() {
       localStorage.removeItem('usuarioLogado');
+      localStorage.removeItem('token');
     }
   </script>
 </body>
