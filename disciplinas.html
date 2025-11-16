@@ -45,8 +45,9 @@
     </div>
 
     <script>
-
+        const API_BASE = 'http://localhost:4000';
         const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        
         if (!usuarioLogado) {
             window.location.href = 'notadez.html';
         }
@@ -54,119 +55,197 @@
         document.getElementById('userInfo').innerHTML = 
             `${usuarioLogado.nome} | <a href="notadez.html" onclick="logout()">Sair</a>`;
 
-        carregarInstituicoes();
-        carregarDisciplinas();
+        // Função para fazer requisições à API
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('token');
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token && { 'Authorization': `Bearer ${token}` }),
+                    ...options.headers
+                },
+                ...options
+            };
 
-        document.getElementById('disciplinaForm').onsubmit = function(e) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, config);
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('usuarioLogado');
+                    window.location.href = 'notadez.html';
+                    return;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro na requisição:', error);
+                mostrarMensagem('❌ Erro de conexão com o servidor');
+                throw error;
+            }
+        }
+
+        // Carregar instituições da API
+        async function carregarInstituicoes() {
+            try {
+                const resultado = await apiRequest('/api/instituicoes');
+                
+                if (resultado.success) {
+                    const instituicoes = resultado.data;
+                    const select = document.getElementById('instituicaoSelect');
+                    select.innerHTML = '<option value="">Selecione uma instituição</option>' +
+                        instituicoes.map(inst => 
+                            `<option value="${inst.id}">${inst.nome} - ${inst.curso}</option>`
+                        ).join('');
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar instituições');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar instituições');
+            }
+        }
+
+        // Carregar disciplinas da API
+        async function carregarDisciplinas() {
+            try {
+                const resultado = await apiRequest('/api/disciplinas');
+                
+                if (resultado.success) {
+                    const disciplinas = resultado.data;
+                    const lista = document.getElementById('listaDisciplinas');
+                    
+                    if (disciplinas.length === 0) {
+                        lista.innerHTML = '<p style="text-align: center; color: #666;">Nenhuma disciplina cadastrada ainda.</p>';
+                        return;
+                    }
+
+                    lista.innerHTML = disciplinas.map(disc => {
+                        return `
+                            <div class="disciplina-card">
+                                <h3>${disc.nome} (${disc.sigla})</h3>
+                                <p><strong>Instituição:</strong> ${disc.instituicaoNome || 'N/A'}</p>
+                                <p><strong>Código:</strong> ${disc.codigo}</p>
+                                <p><strong>Período:</strong> ${disc.periodo}</p>
+                                <div class="acoes-disciplina">
+                                    <button class="btn-small" onclick="gerenciarTurmas(${disc.id})">
+                                        Gerenciar Turmas
+                                    </button>
+                                    <button class="btn-small btn-secondary" onclick="editarDisciplina(${disc.id})">
+                                        Editar
+                                    </button>
+                                    <button class="btn-small btn-excluir" onclick="excluirDisciplina(${disc.id})">
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar disciplinas');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar disciplinas');
+            }
+        }
+
+        // Cadastrar disciplina via API
+        document.getElementById('disciplinaForm').onsubmit = async function(e) {
             e.preventDefault();
             
             const instituicaoId = parseInt(document.getElementById('instituicaoSelect').value);
             if (!instituicaoId) {
-                alert('Selecione uma instituição!');
+                mostrarMensagem('❌ Selecione uma instituição!');
                 return;
             }
             
             const disciplina = {
-                id: Date.now(),
                 instituicaoId: instituicaoId,
                 nome: document.getElementById('nomeDisciplina').value,
                 sigla: document.getElementById('siglaDisciplina').value,
                 codigo: document.getElementById('codigoDisciplina').value,
-                periodo: document.getElementById('periodoDisciplina').value,
-                usuarioEmail: usuarioLogado.email
+                periodo: document.getElementById('periodoDisciplina').value
             };
 
-            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
-            disciplinas.push(disciplina);
-            localStorage.setItem('disciplinas', JSON.stringify(disciplina));
+            try {
+                const resultado = await apiRequest('/api/disciplinas', {
+                    method: 'POST',
+                    body: JSON.stringify(disciplina)
+                });
 
-            localStorage.setItem('disciplinaAtual', JSON.stringify(disciplina));
-
-            alert('Disciplina cadastrada com sucesso!');
-            document.getElementById('disciplinaForm').reset();
-            carregarDisciplinas();
+                if (resultado.success) {
+                    mostrarMensagem('✅ Disciplina cadastrada com sucesso!');
+                    document.getElementById('disciplinaForm').reset();
+                    await carregarDisciplinas();
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao cadastrar disciplina'));
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao cadastrar disciplina');
+            }
         };
 
-        function carregarInstituicoes() {
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            const instituicoesUsuario = instituicoes.filter(inst => inst.usuarioEmail === usuarioLogado.email);
-            
-            const select = document.getElementById('instituicaoSelect');
-            select.innerHTML = '<option value="">Selecione uma instituição</option>' +
-                instituicoesUsuario.map(inst => 
-                    `<option value="${inst.id}">${inst.nome} - ${inst.curso}</option>`
-                ).join('');
-        }
-
-        function carregarDisciplinas() {
-            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
-            const instituicoes = JSON.parse(localStorage.getItem('instituicoes') || '[]');
-            const disciplinasUsuario = disciplinas.filter(disc => disc.usuarioEmail === usuarioLogado.email);
-            
-            const lista = document.getElementById('listaDisciplinas');
-            
-            if (disciplinasUsuario.length === 0) {
-                lista.innerHTML = '<p style="text-align: center; color: #666;">Nenhuma disciplina cadastrada ainda.</p>';
-                return;
-            }
-
-            lista.innerHTML = disciplinasUsuario.map(disc => {
-                const instituicao = instituicoes.find(inst => inst.id === disc.instituicaoId);
-                return `
-                    <div class="disciplina-card">
-                        <h3>${disc.nome} (${disc.sigla})</h3>
-                        <p><strong>Instituição:</strong> ${instituicao?.nome || 'N/A'}</p>
-                        <p><strong>Código:</strong> ${disc.codigo}</p>
-                        <p><strong>Período:</strong> ${disc.periodo}</p>
-                        <div class="acoes-disciplina">
-                            <button class="btn-small" onclick="gerenciarTurmas(${disc.id})">
-                                Gerenciar Turmas
-                            </button>
-                            <button class="btn-small btn-secondary" onclick="editarDisciplina(${disc.id})">
-                                Editar
-                            </button>
-                            <button class="btn-small btn-excluir" onclick="excluirDisciplina(${disc.id})">
-                                Excluir
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function gerenciarTurmas(disciplinaId) {
-            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
-            const disciplina = disciplinas.find(disc => disc.id === disciplinaId);
-            
-            if (disciplina) {
-                localStorage.setItem('disciplinaAtual', JSON.stringify(disciplina));
-                window.location.href = 'turmas.html';
+        async function gerenciarTurmas(disciplinaId) {
+            try {
+                const resultado = await apiRequest(`/api/disciplinas/${disciplinaId}`);
+                
+                if (resultado.success) {
+                    localStorage.setItem('disciplinaAtual', JSON.stringify(resultado.data));
+                    window.location.href = 'turmas.html';
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar disciplina');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar disciplina');
             }
         }
 
-        function excluirDisciplina(id) {
-            const disciplinas = JSON.parse(localStorage.getItem('disciplinas') || '[]');
-            const disciplina = disciplinas.find(disc => disc.id === id);
-            
-            // Verificar se há turmas vinculadas
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            const temTurmas = turmas.some(turma => turma.disciplinaId === id);
-            
-            if (temTurmas) {
-                alert('Não é possível excluir esta disciplina pois existem turmas vinculadas a ela.');
-                return;
+        async function excluirDisciplina(id) {
+            try {
+                // Verificar se há turmas vinculadas
+                const resultadoTurmas = await apiRequest(`/api/turmas/disciplina/${id}`);
+                
+                if (resultadoTurmas.success && resultadoTurmas.data.length > 0) {
+                    mostrarMensagem('❌ Não é possível excluir esta disciplina pois existem turmas vinculadas a ela.');
+                    return;
+                }
+                
+                if (confirm('Tem certeza que deseja excluir esta disciplina?')) {
+                    const resultado = await apiRequest(`/api/disciplinas/${id}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (resultado.success) {
+                        mostrarMensagem('✅ Disciplina excluída com sucesso!');
+                        await carregarDisciplinas();
+                    } else {
+                        mostrarMensagem('❌ ' + (resultado.message || 'Erro ao excluir disciplina'));
+                    }
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao excluir disciplina');
             }
-            
-            if (confirm('Tem certeza que deseja excluir esta disciplina?')) {
-                const novasDisciplinas = disciplinas.filter(disc => disc.id !== id);
-                localStorage.setItem('disciplinas', JSON.stringify(novasDisciplinas));
-                carregarDisciplinas();
-            }
+        }
+
+        function editarDisciplina(id) {
+            // Implementar edição de disciplina
+            mostrarMensagem('Funcionalidade de edição em desenvolvimento');
+        }
+
+        function mostrarMensagem(texto) {
+            alert(texto);
         }
 
         function logout() {
             localStorage.removeItem('usuarioLogado');
+            localStorage.removeItem('token');
         }
+
+        // Inicialização
+        (async function init() {
+            await carregarInstituicoes();
+            await carregarDisciplinas();
+        })();
     </script>
 </body>
 </html>
