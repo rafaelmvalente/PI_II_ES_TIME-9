@@ -113,6 +113,24 @@ button:hover {
     background: #dc3545;
 }
 
-.btn-excluir:hover  {
+.btn-excluir:hover {
     background: #c82333;
+}
+
+.alert-sucesso {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+    padding: 12px;
+    margin-top: 18px;
+    border-radius: 6px;
+    color: #155724;
+}
+
+.alert-erro {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    padding: 12px;
+    margin-top: 18px;
+    border-radius: 6px;
+    color: #721c24;
 }
