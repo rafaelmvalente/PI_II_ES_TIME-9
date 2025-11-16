@@ -221,14 +221,6 @@
                 // Fallback para localStorage
                 const usuarios = JSON.parse(localStorage.getItem('usuarios') || '[]');
                 const usuario = usuarios.find(u => u.email === email);
-                
-                if (!usuario) {
-                    alert('Se o e-mail estiver cadastrado, você receberá um link de recuperação em instantes.');
-                } else {
-                    alert('📧 Link de recuperação enviado para seu e-mail! \n\n(Em produção, um e-mail real seria enviado)');
-                    console.log('🔐 Link simulado: recuperar-senha.html?token=simulado&email=' + email);
-                }
-                showLogin();
             }
         };
     </script>
