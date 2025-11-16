@@ -5,7 +5,6 @@
     .field input, .field select {
       width:100%; padding:10px; border:1px solid #b0c4de; border-radius:6px; background:#f7fafd;
     }
-    
     .row { display:flex; gap:10px; flex-wrap:wrap; }
     .chip { background:#e7f3ff; border-left:4px solid #007bff; padding:8px 12px; border-radius:18px; font-size:.9em; }
     .actions { margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; }
