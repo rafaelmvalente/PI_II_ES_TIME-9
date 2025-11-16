@@ -41,6 +41,7 @@
     </div>
 
     <script>
+        const API_BASE = 'http://localhost:4000';
         const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
         const disciplinaAtual = JSON.parse(localStorage.getItem('disciplinaAtual'));
         
@@ -59,144 +60,225 @@
             <p><strong>Código:</strong> ${disciplinaAtual.codigo} | <strong>Período:</strong> ${disciplinaAtual.periodo}</p>
         `;
 
-        carregarTurmas();
+        // Função para fazer requisições à API
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('token');
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token && { 'Authorization': `Bearer ${token}` }),
+                    ...options.headers
+                },
+                ...options
+            };
 
-        document.getElementById('turmaForm').onsubmit = function(e) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, config);
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('usuarioLogado');
+                    window.location.href = 'notadez.html';
+                    return;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro na requisição:', error);
+                mostrarMensagem('❌ Erro de conexão com o servidor');
+                throw error;
+            }
+        }
+
+        // Carregar turmas da API
+        async function carregarTurmas() {
+            try {
+                const resultado = await apiRequest(`/api/turmas/disciplina/${disciplinaAtual.id}`);
+                
+                if (resultado.success) {
+                    const turmas = resultado.data;
+                    const lista = document.getElementById('listaTurmas');
+                    
+                    if (turmas.length === 0) {
+                        lista.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1 / -1;">Nenhuma turma cadastrada para esta disciplina.</p>';
+                        return;
+                    }
+
+                    // Carregar estatísticas para cada turma
+                    const turmasComStats = await Promise.all(
+                        turmas.map(async (turma) => {
+                            const [alunosResult, componentesResult, notasResult] = await Promise.all([
+                                apiRequest(`/api/alunos/turma/${turma.id}`),
+                                apiRequest(`/api/componentes/disciplina/${disciplinaAtual.id}`),
+                                apiRequest(`/api/notas/turma/${turma.id}`)
+                            ]);
+
+                            return {
+                                ...turma,
+                                alunosCount: alunosResult.success ? alunosResult.data.length : 0,
+                                componentesCount: componentesResult.success ? componentesResult.data.length : 0,
+                                temNotasLancadas: notasResult.success && notasResult.data.length > 0
+                            };
+                        })
+                    );
+
+                    lista.innerHTML = turmasComStats.map(turma => {
+                        return `
+                            <div class="turma-card">
+                                <h3>${turma.nome} (${turma.codigo})</h3>
+                                ${turma.horario ? `<p><strong>Horário:</strong> ${turma.horario}</p>` : ''}
+                                ${turma.local ? `<p><strong>Local:</strong> ${turma.local}</p>` : ''}
+                                
+                                <div class="stats">
+                                    <div class="stat-item">👨‍🎓 ${turma.alunosCount} alunos</div>
+                                    <div class="stat-item">📊 ${turma.componentesCount} componentes</div>
+                                    ${turma.temNotasLancadas ? '<div class="stat-item">✅ Notas lançadas</div>' : ''}
+                                </div>
+                                
+                                <div class="acoes-turma">
+                                    <button class="btn-small btn-success" onclick="gerenciarAlunos(${turma.id})">
+                                        👨‍🎓 Gerenciar Alunos
+                                    </button>
+                                    <button class="btn-small" onclick="gerenciarNotas(${turma.id})">
+                                        📊 Lançar Notas
+                                    </button>
+                                    <button class="btn-small btn-excluir" onclick="excluirTurma(${turma.id})">
+                                        🗑️ Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar turmas');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar turmas');
+            }
+        }
+
+        // Cadastrar turma via API
+        document.getElementById('turmaForm').onsubmit = async function(e) {
             e.preventDefault();
             
             const turma = {
-                id: Date.now(),
                 disciplinaId: disciplinaAtual.id,
                 nome: document.getElementById('nomeTurma').value,
                 codigo: document.getElementById('codigoTurma').value,
                 horario: document.getElementById('horarioTurma').value,
-                local: document.getElementById('localTurma').value,
-                dataCriacao: new Date().toISOString(),
-                usuarioEmail: usuarioLogado.email
+                local: document.getElementById('localTurma').value
             };
 
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            turmas.push(turma);
-            localStorage.setItem('turmas', JSON.stringify(turmas));
+            try {
+                const resultado = await apiRequest('/api/turmas', {
+                    method: 'POST',
+                    body: JSON.stringify(turma)
+                });
 
-            alert('Turma cadastrada com sucesso!');
-            document.getElementById('turmaForm').reset();
-            carregarTurmas();
+                if (resultado.success) {
+                    mostrarMensagem('✅ Turma cadastrada com sucesso!');
+                    document.getElementById('turmaForm').reset();
+                    await carregarTurmas();
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao cadastrar turma'));
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao cadastrar turma');
+            }
         };
 
-        function carregarTurmas() {
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            const componentes = JSON.parse(localStorage.getItem('componentes') || '[]');
-            
-            const turmasDaDisciplina = turmas.filter(turma => 
-                turma.disciplinaId === disciplinaAtual.id && 
-                turma.usuarioEmail === usuarioLogado.email
-            );
-            
-            const lista = document.getElementById('listaTurmas');
-            
-            if (turmasDaDisciplina.length === 0) {
-                lista.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1 / -1;">Nenhuma turma cadastrada para esta disciplina.</p>';
-                return;
-            }
-
-            lista.innerHTML = turmasDaDisciplina.map(turma => {
-                const alunosTurma = alunos[turma.id] || [];
-                const componentesDisciplina = componentes.filter(comp => comp.disciplinaId === disciplinaAtual.id);
-                const temNotasLancadas = verificarNotasLancadas(turma.id, componentesDisciplina);
+        async function gerenciarAlunos(turmaId) {
+            try {
+                const resultado = await apiRequest(`/api/turmas/${turmaId}`);
                 
-                return `
-                    <div class="turma-card">
-                        <h3>${turma.nome} (${turma.codigo})</h3>
-                        ${turma.horario ? `<p><strong>Horário:</strong> ${turma.horario}</p>` : ''}
-                        ${turma.local ? `<p><strong>Local:</strong> ${turma.local}</p>` : ''}
-                        
-                        <div class="stats">
-                            <div class="stat-item">👨‍🎓 ${alunosTurma.length} alunos</div>
-                            <div class="stat-item">📊 ${componentesDisciplina.length} componentes</div>
-                            ${temNotasLancadas ? '<div class="stat-item">✅ Notas lançadas</div>' : ''}
-                        </div>
-                        
-                        <div class="acoes-turma">
-                            <button class="btn-small btn-success" onclick="gerenciarAlunos(${turma.id})">
-                                👨‍🎓 Gerenciar Alunos
-                            </button>
-                            <button class="btn-small" onclick="gerenciarNotas(${turma.id})">
-                                📊 Lançar Notas
-                            </button>
-                            <button class="btn-small btn-excluir" onclick="excluirTurma(${turma.id})">
-                                🗑️ Excluir
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function verificarNotasLancadas(turmaId, componentes) {
-            const notas = JSON.parse(localStorage.getItem('notas') || '{}');
-            return Object.keys(notas).some(key => key.startsWith(`${turmaId}-`));
-        }
-
-        function gerenciarAlunos(turmaId) {
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            const turma = turmas.find(t => t.id === turmaId);
-            
-            if (turma) {
-                localStorage.setItem('turmaAtual', JSON.stringify(turma));
-                window.location.href = 'alunos.html';
-            }
-        }
-
-        function gerenciarNotas(turmaId) {
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            const turma = turmas.find(t => t.id === turmaId);
-            
-            if (turma) {
-                localStorage.setItem('turmaAtual', JSON.stringify(turma));
-                window.location.href = 'lancar-notas.html';
-            }
-        }
-
-        function excluirTurma(id) {
-            const turmas = JSON.parse(localStorage.getItem('turmas') || '[]');
-            const turma = turmas.find(t => t.id === id);
-            
-            const alunos = JSON.parse(localStorage.getItem('alunos') || '{}');
-            const alunosTurma = alunos[id] || [];
-            const temNotasLancadas = verificarNotasLancadas(id, []);
-            
-            if (alunosTurma.length > 0 || temNotasLancadas) {
-                if (confirm('Esta turma possui alunos cadastrados e/ou notas lançadas. Tem certeza que deseja excluir? Esta ação não pode ser desfeita.')) {
-                    const novasTurmas = turmas.filter(t => t.id !== id);
-                    localStorage.setItem('turmas', JSON.stringify(novasTurmas));
-                    
-                    delete alunos[id];
-                    localStorage.setItem('alunos', JSON.stringify(alunos));
-                    
-                    const notas = JSON.parse(localStorage.getItem('notas') || '{}');
-                    Object.keys(notas).forEach(key => {
-                        if (key.startsWith(`${id}-`)) {
-                            delete notas[key];
-                        }
-                    });
-                    localStorage.setItem('notas', JSON.stringify(notas));
-                    
-                    carregarTurmas();
+                if (resultado.success) {
+                    localStorage.setItem('turmaAtual', JSON.stringify(resultado.data));
+                    window.location.href = 'alunos.html';
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar turma');
                 }
-            } else {
-                if (confirm('Tem certeza que deseja excluir esta turma?')) {
-                    const novasTurmas = turmas.filter(t => t.id !== id);
-                    localStorage.setItem('turmas', JSON.stringify(novasTurmas));
-                    carregarTurmas();
-                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar turma');
             }
+        }
+
+        async function gerenciarNotas(turmaId) {
+            try {
+                const resultado = await apiRequest(`/api/turmas/${turmaId}`);
+                
+                if (resultado.success) {
+                    localStorage.setItem('turmaAtual', JSON.stringify(resultado.data));
+                    window.location.href = 'lancar-notas.html';
+                } else {
+                    mostrarMensagem('❌ Erro ao carregar turma');
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao carregar turma');
+            }
+        }
+
+        async function excluirTurma(id) {
+            try {
+                // Verificar se há alunos ou notas vinculadas
+                const [alunosResult, notasResult] = await Promise.all([
+                    apiRequest(`/api/alunos/turma/${id}`),
+                    apiRequest(`/api/notas/turma/${id}`)
+                ]);
+
+                const temAlunos = alunosResult.success && alunosResult.data.length > 0;
+                const temNotas = notasResult.success && notasResult.data.length > 0;
+
+                if (temAlunos || temNotas) {
+                    const mensagem = 'Esta turma possui ' + 
+                        (temAlunos ? 'alunos cadastrados' : '') +
+                        (temAlunos && temNotas ? ' e ' : '') +
+                        (temNotas ? 'notas lançadas' : '') +
+                        '. Tem certeza que deseja excluir? Esta ação não pode ser desfeita.';
+                    
+                    if (confirm(mensagem)) {
+                        await excluirTurmaComDados(id);
+                    }
+                } else {
+                    if (confirm('Tem certeza que deseja excluir esta turma?')) {
+                        await excluirTurmaComDados(id);
+                    }
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao verificar dados da turma');
+            }
+        }
+
+        async function excluirTurmaComDados(id) {
+            try {
+                const resultado = await apiRequest(`/api/turmas/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (resultado.success) {
+                    mostrarMensagem('✅ Turma excluída com sucesso!');
+                    await carregarTurmas();
+                } else {
+                    mostrarMensagem('❌ ' + (resultado.message || 'Erro ao excluir turma'));
+                }
+            } catch (error) {
+                mostrarMensagem('❌ Erro ao excluir turma');
+            }
+        }
+
+        function mostrarMensagem(texto) {
+            alert(texto);
         }
 
         function logout() {
             localStorage.removeItem('usuarioLogado');
+            localStorage.removeItem('token');
         }
+
+        // Inicialização
+        (async function init() {
+            await carregarTurmas();
+        })();
     </script>
 </body>
 </html>
